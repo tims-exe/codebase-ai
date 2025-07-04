@@ -81,9 +81,23 @@ class QueryProcessor:
             response = llm.invoke([message])
             
             import json
-            changes_data = json.loads(response.content)
-            return changes_data.get('changes', [])
+            import re
+            
+            # Extract JSON from response (in case there's extra text)
+            content = response.content
+            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            if json_match:
+                json_str = json_match.group()
+                changes_data = json.loads(json_str)
+                return changes_data.get('changes', [])
+            else:
+                print("No valid JSON found in response")
+                return []
         
+        except json.JSONDecodeError as e:
+            print(f"JSON parsing error: {e}")
+            print(f"Response content: {response.content}")
+            return []
         except Exception as e:
             print(f"Error generating changes: {e}")
             return []
@@ -137,5 +151,28 @@ class QueryProcessor:
                 
                 print(f"Successfully modified {file_path}")
                 
+                # Update the index for this file
+                self._update_file_index(file_path)
+                
             except Exception as e:
                 print(f"Error applying change to {change['file_path']}: {e}")
+    
+    def _update_file_index(self, file_path: Path):
+        """Update chunks for a specific file in the index"""
+        try:
+            from .indexer import CodebaseIndexer
+            
+            relative_path = file_path.relative_to(self.project_path)
+            
+            # Remove existing chunks for this file
+            self.db.remove_chunks_for_file(str(relative_path))
+            
+            # Re-index the file
+            indexer = CodebaseIndexer(self.project_path)
+            indexer._index_file(file_path)
+            
+            print(f"Updated index for {file_path}")
+            
+        except Exception as e:
+            print(f"Error updating index for {file_path}: {e}")
+

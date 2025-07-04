@@ -16,8 +16,11 @@ def main():
     
     index_path = project_path / ".codebase_index"
     if not index_path.exists():
-        print("No codebase index. run index.py")
-        return
+        print("No codebase index found. Indexing...")
+        from utils.indexer import CodebaseIndexer
+        indexer = CodebaseIndexer(project_path)
+        indexer.index()
+        print("Indexing complete")
     
     print("Codebase-ai")
     print("Type 'quit' or 'exit' to stop\n")
