@@ -11,7 +11,7 @@ def main():
         print("No api key provided")
         return
     
-    project_path = Path.cwd() / "calculator_project"
+    project_path = Path.cwd() / "fastapi-server"
     
     index_path = project_path / ".codebase_index"
     if not index_path.exists():
