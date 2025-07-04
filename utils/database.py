@@ -1,4 +1,3 @@
-# database.py
 import hashlib
 import json
 from pathlib import Path
@@ -85,3 +84,16 @@ class EmbeddingDB:
                 }
         
         return None
+    
+    def remove_chunks_for_file(self, file_path: str):
+        """Remove all chunks for a specific file"""
+        try:
+            results = self.collection.get(
+                where={"file_path": file_path}
+            )
+            
+            if results['ids']:
+                self.collection.delete(ids=results['ids'])
+                
+        except Exception as e:
+            print(f"Error removing chunks for {file_path}: {e}")

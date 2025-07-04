@@ -1,9 +1,8 @@
-# main.py
-
 import os
 from pathlib import Path
 from utils.query_processor import QueryProcessor
 from dotenv import load_dotenv
+from utils.indexer import CodebaseIndexer
 
 load_dotenv()
 
@@ -16,8 +15,10 @@ def main():
     
     index_path = project_path / ".codebase_index"
     if not index_path.exists():
-        print("No codebase index. run index.py")
-        return
+        print("Indexing...")
+        indexer = CodebaseIndexer(project_path)
+        indexer.index()
+        print("Indexing complete")
     
     print("Codebase-ai")
     print("Type 'quit' or 'exit' to stop\n")

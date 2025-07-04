@@ -9,4 +9,13 @@ class Calculator:
         return a * b
     
     def divide(self, a, b):
-        return a / b
+        try:
+            return a / b
+        except ZeroDivisionError:
+            raise ValueError("Cannot divide by zero")
+
+    def modulus(self, a, b):
+        try:
+            return a % b
+        except ZeroDivisionError:
+            raise ValueError("Cannot perform modulus with zero")
