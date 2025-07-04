@@ -1,12 +1,12 @@
-import ast
 import hashlib
 import logging
 from pathlib import Path
-from typing import List, Dict, Any
+from typing import Dict, Any
 from .database import EmbeddingDB
 from .embeddings import get_embedding
+import cocoindex
 
-# Setup logging
+# Logging setup
 logging.basicConfig(
     filename='manage.log',
     filemode='w',
@@ -19,88 +19,84 @@ class CodebaseIndexer:
     def __init__(self, project_path: Path):
         self.project_path = project_path
         self.db = EmbeddingDB(project_path / ".codebase_index")
-    
+        self.flow = self._make_flow()
+        self.flow.setup()  # initialize once
+
+    def _make_flow(self):
+        @cocoindex.flow_def(name="CodeChunking")
+        def chunk_flow(flow_builder: cocoindex.FlowBuilder, scope: cocoindex.DataScope):
+            scope["files"] = flow_builder.add_source(
+                cocoindex.sources.LocalFile(
+                    path=str(self.project_path),
+                    included_patterns=["*.py", "*.js", "*.jsx", "*.ts", "*.tsx"]
+                )
+            )
+            collector = scope.add_collector()
+            with scope["files"].row() as file:
+                file["chunks"] = file["content"].transform(
+                    cocoindex.functions.SplitRecursively(),
+                    language=file["filename"].split('.')[-1],
+                    chunk_size=1000,
+                    chunk_overlap=100
+                )
+                with file["chunks"].row() as chunk:
+                    collector.collect(
+                        filename=file["filename"],
+                        content=chunk["text"],
+                        start_line=chunk["location"]["start_line"],
+                        end_line=chunk["location"]["end_line"],
+                        node_type=chunk["node_type"]
+                    )
+            # export optional if needed using collector.export(...)
+            return collector
+
+        return chunk_flow
+
     def index(self):
-        for file_path in self._discover_files():
-            try:
-                self._index_file(file_path)
-                print(f"Indexed: {file_path}")
-            except Exception as e:
-                print(f"Error indexing {file_path}: {e}")
-                logger.error(f"Error indexing {file_path}: {e}")
-    
-    def _discover_files(self) -> List[Path]:
-        """Discover all Python files in the project"""
-        files = []
-        
-        for file_path in self.project_path.rglob("*.py"):
-            if not any(part.startswith('.') for part in file_path.parts):
-                if file_path.name not in ['__pycache__']:
-                    files.append(file_path)
-        
-        return files
-    
-    def _index_file(self, file_path: Path):
-        try:
-            content = file_path.read_text(encoding='utf-8')
-        except UnicodeDecodeError:
+        stats = self.flow.update()  # run the pipeline
+        for chunk in stats.raw_data:
+            self._process_and_store_chunk(chunk)
+        flow = self.flow
+        # Prepare backend tables/collections
+        flow.setup(report_to_stdout=True)
+        # Run the flow incrementally
+        stats = flow.update()
+        print(f"Flow stats: {stats}")
+        # Process retrieved chunks
+        chunks = stats.raw_data
+        for chunk in chunks:
+            self._process_and_store_chunk(chunk)
+
+    def _process_and_store_chunk(self, chunk_data: Dict[str, Any]):
+        file_path = Path(chunk_data["filename"])
+        content = chunk_data["content"]
+        chunk_hash = hashlib.md5(content.encode()).hexdigest()
+
+        if self.db.chunk_exists(chunk_hash):
             return
-        
-        try:
-            tree = ast.parse(content)
-            
-            for node in ast.walk(tree):
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
-                    chunk = self._extract_chunk(content, node)
-                    if chunk:
-                        self._store_chunk(file_path, chunk)
-        except SyntaxError:
-            logger.error(f"Syntax error in file: {file_path}")
-    
-    def _extract_chunk(self, content: str, node: ast.AST) -> Dict[str, Any]:
-        lines = content.splitlines()
-        start_line = node.lineno - 1
-        end_line = getattr(node, 'end_lineno', start_line + 1)
-        
-        chunk_content = '\n'.join(lines[start_line:end_line])
-        chunk_hash = hashlib.md5(chunk_content.encode()).hexdigest()
-        
-        return {
-            'content': chunk_content,
-            'hash': chunk_hash,
-            'start_line': start_line + 1,
-            'end_line': end_line,
-            'type': type(node).__name__,
-            'name': getattr(node, 'name', 'unnamed')
-        }
-    
-    def _store_chunk(self, file_path: Path, chunk: Dict[str, Any]):
-        relative_path = file_path.relative_to(self.project_path)
-        
-        # Check if chunk already exists (by hash)
-        if self.db.chunk_exists(chunk['hash']):
-            return
-        
-        # Generate embedding for the chunk
-        embedding = get_embedding(chunk['content'])
-        
-        # Store in database
+
+        name = self._extract_name(content, chunk_data.get("node_type", ""))
+        embedding = get_embedding(content)
+        relative = file_path.relative_to(self.project_path)
+
         self.db.store_chunk(
-            file_path=str(relative_path),
-            chunk_hash=chunk['hash'],
-            chunk_type=chunk['type'],
-            name=chunk['name'],
-            start_line=chunk['start_line'],
-            end_line=chunk['end_line'],
-            content=chunk['content'],
+            file_path=str(relative),
+            chunk_hash=chunk_hash,
+            chunk_type=chunk_data.get("node_type", "code_block"),
+            name=name,
+            start_line=chunk_data["start_line"],
+            end_line=chunk_data["end_line"],
+            content=content,
             embedding=embedding
         )
-        
-        # Log the chunk details
-        logger.info(f"Stored chunk: {chunk['hash']}")
-        logger.info(f"  File: {relative_path}")
-        logger.info(f"  Type: {chunk['type']}")
-        logger.info(f"  Name: {chunk['name']}")
-        logger.info(f"  Lines: {chunk['start_line']}-{chunk['end_line']}")
-        logger.info(f"  Content: \n{chunk['content'][:100]}...")
-        logger.info("-" * 50)
+        logger.info(f"Indexed chunk {chunk_hash} in {relative} lines {chunk_data['start_line']}-{chunk_data['end_line']}")
+
+    def _extract_name(self, content: str, node_type: str) -> str:
+        first = content.strip().split("\n", 1)[0].strip()
+        if first.startswith("def "):
+            return first.split("def ", 1)[1].split("(", 1)[0].strip()
+        if first.startswith("class "):
+            return first.split("class ", 1)[1].split("(", 1)[0].rstrip(":").strip()
+        if first.startswith("function "):
+            return first.split("function ", 1)[1].split("(", 1)[0].strip()
+        return "unnamed"

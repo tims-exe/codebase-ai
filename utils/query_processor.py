@@ -157,20 +157,20 @@ class QueryProcessor:
             except Exception as e:
                 print(f"Error applying change to {change['file_path']}: {e}")
     
-    def _update_file_index(self, file_path: Path):
-        """Update chunks for a specific file in the index"""
-        try:
+    # def _update_file_index(self, file_path: Path):
+    #     """Update chunks for a specific file in the index"""
+    #     try:
             
-            relative_path = file_path.relative_to(self.project_path)
+    #         relative_path = file_path.relative_to(self.project_path)
             
-            # Remove existing chunks for this file
-            self.db.remove_chunks_for_file(str(relative_path))
+    #         # Remove existing chunks for this file
+    #         self.db.remove_chunks_for_file(str(relative_path))
             
-            # Re-index the file
-            indexer = CodebaseIndexer(self.project_path)
-            indexer._index_file(file_path)
+    #         # Re-index the file
+    #         indexer = CodebaseIndexer(self.project_path)
+    #         indexer._index_file(file_path)
             
-            print(f"Updated index for {file_path}")
+    #         print(f"Updated index for {file_path}")
             
-        except Exception as e:
-            print(f"Error updating index for {file_path}: {e}")
+    #     except Exception as e:
+    #         print(f"Error updating index for {file_path}: {e}")
