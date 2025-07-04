@@ -5,4 +5,3 @@ numpy
 langchain-huggingface 
 sentence-transformers
 python-dotenv
-cocoindex

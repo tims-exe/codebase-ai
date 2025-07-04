@@ -1,9 +1,8 @@
-# main.py
-
 import os
 from pathlib import Path
 from utils.query_processor import QueryProcessor
 from dotenv import load_dotenv
+from utils.indexer import CodebaseIndexer
 
 load_dotenv()
 
@@ -12,12 +11,11 @@ def main():
         print("No api key provided")
         return
     
-    project_path = Path.cwd() / "calculator_project"
+    project_path = Path.cwd() / "fastapi-server"
     
     index_path = project_path / ".codebase_index"
     if not index_path.exists():
-        print("No codebase index found. Indexing...")
-        from utils.indexer import CodebaseIndexer
+        print("Indexing...")
         indexer = CodebaseIndexer(project_path)
         indexer.index()
         print("Indexing complete")

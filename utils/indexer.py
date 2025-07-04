@@ -1,11 +1,10 @@
-# indexer.py
+import ast
 import hashlib
 import logging
 from pathlib import Path
 from typing import List, Dict, Any
 from .database import EmbeddingDB
 from .embeddings import get_embedding
-from cocoindex import CocoIndex
 
 # Setup logging
 logging.basicConfig(
@@ -20,18 +19,6 @@ class CodebaseIndexer:
     def __init__(self, project_path: Path):
         self.project_path = project_path
         self.db = EmbeddingDB(project_path / ".codebase_index")
-        
-        # Initialize CocoIndex
-        self.coco = CocoIndex()
-        
-        # Language mappings
-        self.language_extensions = {
-            '.py': 'python',
-            '.js': 'javascript',
-            '.jsx': 'javascript',
-            '.ts': 'typescript',
-            '.tsx': 'typescript'
-        }
     
     def index(self):
         for file_path in self._discover_files():
@@ -43,14 +30,13 @@ class CodebaseIndexer:
                 logger.error(f"Error indexing {file_path}: {e}")
     
     def _discover_files(self) -> List[Path]:
-        """Discover all supported files in the project"""
+        """Discover all Python files in the project"""
         files = []
         
-        for ext in self.language_extensions.keys():
-            for file_path in self.project_path.rglob(f"*{ext}"):
-                if not any(part.startswith('.') for part in file_path.parts):
-                    if file_path.name not in ['__pycache__']:
-                        files.append(file_path)
+        for file_path in self.project_path.rglob("*.py"):
+            if not any(part.startswith('.') for part in file_path.parts):
+                if file_path.name not in ['__pycache__']:
+                    files.append(file_path)
         
         return files
     
@@ -60,35 +46,32 @@ class CodebaseIndexer:
         except UnicodeDecodeError:
             return
         
-        # Get language from file extension
-        language = self.language_extensions.get(file_path.suffix)
-        if not language:
-            return
-        
-        # Use CocoIndex to chunk the file
-        chunks = self.coco.chunk_code(
-            content=content,
-            language=language,
-            file_path=str(file_path)
-        )
-        
-        for chunk in chunks:
-            processed_chunk = self._process_coco_chunk(chunk)
-            if processed_chunk:
-                self._store_chunk(file_path, processed_chunk)
+        try:
+            tree = ast.parse(content)
+            
+            for node in ast.walk(tree):
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                    chunk = self._extract_chunk(content, node)
+                    if chunk:
+                        self._store_chunk(file_path, chunk)
+        except SyntaxError:
+            logger.error(f"Syntax error in file: {file_path}")
     
-    def _process_coco_chunk(self, coco_chunk) -> Dict[str, Any]:
-        """Convert CocoIndex chunk to our format"""
-        content = coco_chunk.content
-        chunk_hash = hashlib.md5(content.encode()).hexdigest()
+    def _extract_chunk(self, content: str, node: ast.AST) -> Dict[str, Any]:
+        lines = content.splitlines()
+        start_line = node.lineno - 1
+        end_line = getattr(node, 'end_lineno', start_line + 1)
+        
+        chunk_content = '\n'.join(lines[start_line:end_line])
+        chunk_hash = hashlib.md5(chunk_content.encode()).hexdigest()
         
         return {
-            'content': content,
+            'content': chunk_content,
             'hash': chunk_hash,
-            'start_line': coco_chunk.start_line,
-            'end_line': coco_chunk.end_line,
-            'type': coco_chunk.node_type,
-            'name': getattr(coco_chunk, 'name', 'unnamed')
+            'start_line': start_line + 1,
+            'end_line': end_line,
+            'type': type(node).__name__,
+            'name': getattr(node, 'name', 'unnamed')
         }
     
     def _store_chunk(self, file_path: Path, chunk: Dict[str, Any]):

@@ -1,4 +1,3 @@
-# query_processor.py
 import os
 from pathlib import Path
 from typing import List, Dict, Any
@@ -7,6 +6,10 @@ from langchain.schema import HumanMessage
 from .database import EmbeddingDB
 from .embeddings import get_embedding
 from dotenv import load_dotenv
+import json
+import re
+from .indexer import CodebaseIndexer
+
 load_dotenv()
 
 llm = ChatAnthropic(
@@ -80,10 +83,7 @@ class QueryProcessor:
             message = HumanMessage(content=prompt)
             response = llm.invoke([message])
             
-            import json
-            import re
-            
-            # Extract JSON from response (in case there's extra text)
+            # Extract JSON from response
             content = response.content
             json_match = re.search(r'\{.*\}', content, re.DOTALL)
             if json_match:
@@ -160,7 +160,6 @@ class QueryProcessor:
     def _update_file_index(self, file_path: Path):
         """Update chunks for a specific file in the index"""
         try:
-            from .indexer import CodebaseIndexer
             
             relative_path = file_path.relative_to(self.project_path)
             
@@ -175,4 +174,3 @@ class QueryProcessor:
             
         except Exception as e:
             print(f"Error updating index for {file_path}: {e}")
-
