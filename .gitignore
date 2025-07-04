@@ -3,3 +3,4 @@ test.py
 .venv
 .env
 .codebase_index
+manage.log
