@@ -1,1 +1,5 @@
 __pycache__
+test.py
+.venv
+.env
+.codebase_index
