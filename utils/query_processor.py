@@ -62,12 +62,21 @@ class QueryProcessor:
             Relevant Code Context:
             {context}
 
-            Please analyze the code and provide specific changes needed. For each change, provide:
+            IMPORTANT INSTRUCTIONS:
+            1. Make MINIMAL changes - only modify what's necessary to address the query
+            2. Preserve existing imports, class/function signatures, and overall structure
+            3. If adding new code, try to add it without replacing existing working code
+            4. Be extremely careful with indentation and syntax
+            5. Only modify the specific lines that need to change
+            6. Do not rewrite entire functions unless absolutely necessary
+            7. Preserve all existing functionality
+
+            For each change, provide:
             1. file_path: The file to modify
-            2. start_line: Starting line number
-            3. end_line: Ending line number  
-            4. new_content: The new code to replace the old content
-            5. reasoning: Why this change is needed
+            2. start_line: Starting line number (be very precise)
+            3. end_line: Ending line number (be very precise)
+            4. new_content: The new code to replace ONLY the specified lines
+            5. reasoning: Why this specific change is needed
 
             Respond in the following JSON format:
             {{
@@ -75,15 +84,15 @@ class QueryProcessor:
                 {{
                 "file_path": "path/to/file.py",
                 "start_line": 10,
-                "end_line": 15,
-                "new_content": "new code here",
+                "end_line": 10,
+                "new_content": "    # Only the specific line(s) that need to change",
                 "reasoning": "explanation of change"
                 }}
             ]
             }}
 
-            Only suggest changes that directly address the user's query. Be precise with line numbers and make sure not to cause any errors in the code 
-            Make sure you are importing only whats necessary and not repeating any imports in that file.
+            CRITICAL: Only suggest changes that directly address the user's query. Be precise with line numbers.
+            Make the smallest possible changes. Do not rewrite working code.
             """
         
         try:
