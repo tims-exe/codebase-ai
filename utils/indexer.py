@@ -1,3 +1,4 @@
+# indexer.py
 import hashlib
 import logging
 from pathlib import Path
@@ -41,133 +42,113 @@ class CodebaseIndexer:
         with open(file_path, 'rb') as f:
             source_code = f.read()
         
+        # Get parser and node types based on file extension
         if file_path.suffix == '.py':
             parser = get_parser('python')
-            import_types = ['import_statement', 'import_from_statement']
-            function_types = ['function_definition', 'async_function_definition']
-            class_types = ['class_definition']
-            decorated_types = ['decorated_definition'] 
+            node_types = {
+                'imports': ['import_statement', 'import_from_statement'],
+                'functions': ['function_definition', 'async_function_definition'],
+                'classes': ['class_definition'],
+                'decorated': ['decorated_definition']
+            }
         elif file_path.suffix == '.js':
             parser = get_parser('javascript')
-            import_types = ['import_statement', 'import_declaration']
-            function_types = ['function_declaration', 'function_expression', 'arrow_function']
-            class_types = ['class_declaration']
-            decorated_types = []
+            node_types = {
+                'imports': ['import_statement', 'import_declaration'],
+                'functions': ['function_declaration', 'function_expression', 'arrow_function'],
+                'classes': ['class_declaration'],
+                'decorated': []
+            }
         else:
             return
         
         tree = parser.parse(source_code)
-        
         processed_lines = set()
         
-        imports = []
-        
-        def collect_imports(node: Node):
-            if node.type in import_types:
-                imports.append(node)
-            for child in node.children:
-                collect_imports(child)
-        
-        collect_imports(tree.root_node)
-        
+        # Process imports first
+        imports = self._collect_nodes(tree.root_node, node_types['imports'])
         if imports:
-            start_line = min(n.start_point[0] for n in imports)
-            end_line = max(n.end_point[0] for n in imports)
-            start_byte = min(n.start_byte for n in imports)
-            end_byte = max(n.end_byte for n in imports)
-            
-            content = source_code[start_byte:end_byte].decode('utf-8')
-            chunk = {
-                'content': content,
-                'hash': hashlib.md5(content.encode()).hexdigest(),
-                'start_line': start_line + 1,
-                'end_line': end_line + 1,
-                'type': 'Import',
-                'name': 'imports'
-            }
-            
-            self._store_chunk(file_path, chunk)
-            
-            for line_num in range(start_line, end_line + 1):
-                processed_lines.add(line_num + 1)
+            self._process_node_group(file_path, source_code, imports, 'Import', 'imports', processed_lines)
         
-        def walk_tree(node: Node):
-            if node.type in decorated_types:
-                self._process_decorated(node, file_path, source_code, processed_lines)
-            elif node.type in function_types:
-                self._process_node(file_path, source_code, node, 'FunctionDef', processed_lines)
-            elif node.type in class_types:
-                self._process_node(file_path, source_code, node, 'ClassDef', processed_lines)
-            elif node.type == 'assignment':
-                self._process_node(file_path, source_code, node, 'Statement', processed_lines)
-            
-            for child in node.children:
-                walk_tree(child)
+        # Process other node types
+        self._walk_tree(tree.root_node, file_path, source_code, node_types, processed_lines)
         
-        walk_tree(tree.root_node)
-        
+        # Process remaining lines
         lines = source_code.decode('utf-8').split('\n')
         self._process_remaining_lines(file_path, lines, processed_lines)
     
-    def _process_decorated(self, node: Node, file_path: Path, source_code: bytes, processed_lines: set):
-        if node.start_point[0] in processed_lines:
-            return
-        
-        func_node = None
+    def _collect_nodes(self, node: Node, node_types: List[str]) -> List[Node]:
+        nodes = []
+        if node.type in node_types:
+            nodes.append(node)
         for child in node.children:
-            if child.type in ['function_definition', 'async_function_definition', 'class_definition']:
-                func_node = child
-                break
-        
-        if not func_node:
+            nodes.extend(self._collect_nodes(child, node_types))
+        return nodes
+    
+    def _process_node_group(self, file_path: Path, source_code: bytes, nodes: List[Node], 
+                           chunk_type: str, name: str, processed_lines: set):
+        if not nodes:
             return
         
-        # Extract the entire decorated definition (decorators + function/class)
-        content = source_code[node.start_byte:node.end_byte].decode('utf-8')
-        name = self._get_node_name(func_node, source_code)
+        start_line = min(n.start_point[0] for n in nodes)
+        end_line = max(n.end_point[0] for n in nodes)
+        start_byte = min(n.start_byte for n in nodes)
+        end_byte = max(n.end_byte for n in nodes)
         
-        # Determine chunk type based on what's being decorated
-        chunk_type = 'FunctionDef' if func_node.type in ['function_definition', 'async_function_definition'] else 'ClassDef'
+        content = source_code[start_byte:end_byte].decode('utf-8')
         
-        chunk = {
-            'content': content,
-            'hash': hashlib.md5(content.encode()).hexdigest(),
-            'start_line': node.start_point[0] + 1,
-            'end_line': node.end_point[0] + 1,
-            'type': chunk_type,
-            'name': name
-        }
+        self._store_chunk(file_path, content, chunk_type, name, start_line + 1, end_line + 1)
         
-        self._store_chunk(file_path, chunk)
-        
-        # Mark lines as processed
-        for line_num in range(node.start_point[0], node.end_point[0] + 1):
+        for line_num in range(start_line, end_line + 1):
             processed_lines.add(line_num + 1)
     
-    def _process_node(self, file_path: Path, source_code: bytes, node: Node, chunk_type: str, processed_lines: set):
-        if node.start_point[0] in processed_lines:
+    def _walk_tree(self, node: Node, file_path: Path, source_code: bytes, 
+                  node_types: Dict[str, List[str]], processed_lines: set):
+        if node.type in node_types['decorated']:
+            self._process_decorated(node, file_path, source_code, processed_lines)
+        elif node.type in node_types['functions']:
+            self._process_single_node(file_path, source_code, node, 'FunctionDef', processed_lines)
+        elif node.type in node_types['classes']:
+            self._process_single_node(file_path, source_code, node, 'ClassDef', processed_lines)
+        elif node.type == 'assignment':
+            self._process_single_node(file_path, source_code, node, 'Statement', processed_lines)
+        
+        for child in node.children:
+            self._walk_tree(child, file_path, source_code, node_types, processed_lines)
+    
+    def _process_decorated(self, node: Node, file_path: Path, source_code: bytes, processed_lines: set):
+        if node.start_point[0] + 1 in processed_lines:
+            return
+        
+        func_node = next((child for child in node.children 
+                         if child.type in ['function_definition', 'async_function_definition', 'class_definition']), None)
+        
+        if func_node:
+            content = source_code[node.start_byte:node.end_byte].decode('utf-8')
+            name = self._get_node_name(func_node, source_code)
+            chunk_type = 'FunctionDef' if func_node.type in ['function_definition', 'async_function_definition'] else 'ClassDef'
+            
+            self._store_chunk(file_path, content, chunk_type, name, 
+                            node.start_point[0] + 1, node.end_point[0] + 1)
+            
+            for line_num in range(node.start_point[0], node.end_point[0] + 1):
+                processed_lines.add(line_num + 1)
+    
+    def _process_single_node(self, file_path: Path, source_code: bytes, node: Node, 
+                           chunk_type: str, processed_lines: set):
+        if node.start_point[0] + 1 in processed_lines:
             return
         
         content = source_code[node.start_byte:node.end_byte].decode('utf-8')
-        name = self._get_node_name(node, source_code) if chunk_type in ['FunctionDef', 'ClassDef'] else 'imports'
+        name = self._get_node_name(node, source_code) if chunk_type in ['FunctionDef', 'ClassDef'] else 'code_block'
         
-        chunk = {
-            'content': content,
-            'hash': hashlib.md5(content.encode()).hexdigest(),
-            'start_line': node.start_point[0] + 1,
-            'end_line': node.end_point[0] + 1,
-            'type': chunk_type,
-            'name': name
-        }
+        self._store_chunk(file_path, content, chunk_type, name, 
+                        node.start_point[0] + 1, node.end_point[0] + 1)
         
-        self._store_chunk(file_path, chunk)
-        
-        # Mark lines as processed
         for line_num in range(node.start_point[0], node.end_point[0] + 1):
             processed_lines.add(line_num + 1)
     
     def _get_node_name(self, node: Node, source_code: bytes) -> str:
-        # Get name from function/class definition
         for child in node.children:
             if child.type == 'identifier':
                 return source_code[child.start_byte:child.end_byte].decode('utf-8')
@@ -191,41 +172,37 @@ class CodebaseIndexer:
                 if not line.strip() or i == len(lines):
                     if chunk_lines and any(l.strip() for l in chunk_lines):
                         content = '\n'.join(chunk_lines).strip()
-                        chunk = {
-                            'content': content,
-                            'hash': hashlib.md5(content.encode()).hexdigest(),
-                            'start_line': start_line,
-                            'end_line': start_line + len(chunk_lines) - 1,
-                            'type': 'Statement',
-                            'name': 'code_block'
-                        }
-                        self._store_chunk(file_path, chunk)
+                        self._store_chunk(file_path, content, 'Statement', 'code_block', 
+                                        start_line, start_line + len(chunk_lines) - 1)
                     chunk_lines = []
                     start_line = None
     
-    def _store_chunk(self, file_path: Path, chunk: Dict[str, Any]):
+    def _store_chunk(self, file_path: Path, content: str, chunk_type: str, name: str, 
+                    start_line: int, end_line: int):
         """Store chunk if it doesn't already exist"""
-        if self.db.chunk_exists(chunk['hash']):
+        chunk_hash = hashlib.md5(content.encode()).hexdigest()
+        
+        if self.db.chunk_exists(chunk_hash):
             return
         
         relative_path = file_path.relative_to(self.project_path)
-        embedding = get_embedding(chunk['content'])
+        embedding = get_embedding(content)
         
         self.db.store_chunk(
             file_path=str(relative_path),
-            chunk_hash=chunk['hash'],
-            chunk_type=chunk['type'],
-            name=chunk['name'],
-            start_line=chunk['start_line'],
-            end_line=chunk['end_line'],
-            content=chunk['content'],
+            chunk_hash=chunk_hash,
+            chunk_type=chunk_type,
+            name=name,
+            start_line=start_line,
+            end_line=end_line,
+            content=content,
             embedding=embedding
         )
         
-        logger.info(f"Stored chunk: {chunk['hash']}")
+        logger.info(f"Stored chunk: {chunk_hash}")
         logger.info(f"  File: {relative_path}")
-        logger.info(f"  Type: {chunk['type']}")
-        logger.info(f"  Name: {chunk['name']}")
-        logger.info(f"  Lines: {chunk['start_line']}-{chunk['end_line']}")
-        logger.info(f"  Content: \n{chunk['content'][:100]}...")
+        logger.info(f"  Type: {chunk_type}")
+        logger.info(f"  Name: {name}")
+        logger.info(f"  Lines: {start_line}-{end_line}")
+        logger.info(f"  Content: \n{content[:100]}...")
         logger.info("-" * 50)

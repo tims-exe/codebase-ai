@@ -1,5 +1,3 @@
-import hashlib
-import json
 from pathlib import Path
 from typing import List, Dict, Any, Optional
 import chromadb
@@ -10,7 +8,6 @@ class EmbeddingDB:
         self.db_path = db_path
         self.db_path.mkdir(exist_ok=True)
         
-        # Initialize Chroma client
         self.client = chromadb.PersistentClient(
             path=str(self.db_path),
             settings=Settings(allow_reset=True)
@@ -52,25 +49,21 @@ class EmbeddingDB:
             n_results=top_k
         )
         
-        chunks = []
-        for i in range(len(results['ids'][0])):
-            metadata = results['metadatas'][0][i]
-            chunks.append({
-                'file_path': metadata['file_path'],
-                'chunk_type': metadata['chunk_type'],
-                'name': metadata['name'],
-                'start_line': metadata['start_line'],
-                'end_line': metadata['end_line'],
+        return [
+            {
+                'file_path': results['metadatas'][0][i]['file_path'],
+                'chunk_type': results['metadatas'][0][i]['chunk_type'],
+                'name': results['metadatas'][0][i]['name'],
+                'start_line': results['metadatas'][0][i]['start_line'],
+                'end_line': results['metadatas'][0][i]['end_line'],
                 'content': results['documents'][0][i],
-                'similarity': 1 - results['distances'][0][i] 
-            })
-        
-        return chunks
+                'similarity': 1 - results['distances'][0][i]
+            }
+            for i in range(len(results['ids'][0]))
+        ]
     
     def get_chunk_by_location(self, file_path: str, line_number: int) -> Optional[Dict[str, Any]]:
-        results = self.collection.get(
-            where={"file_path": file_path}
-        )
+        results = self.collection.get(where={"file_path": file_path})
         
         for i, metadata in enumerate(results['metadatas']):
             if metadata['start_line'] <= line_number <= metadata['end_line']:
@@ -82,18 +75,13 @@ class EmbeddingDB:
                     'end_line': metadata['end_line'],
                     'content': results['documents'][i]
                 }
-        
         return None
     
     def remove_chunks_for_file(self, file_path: str):
         """Remove all chunks for a specific file"""
         try:
-            results = self.collection.get(
-                where={"file_path": file_path}
-            )
-            
+            results = self.collection.get(where={"file_path": file_path})
             if results['ids']:
                 self.collection.delete(ids=results['ids'])
-                
         except Exception as e:
             print(f"Error removing chunks for {file_path}: {e}")

@@ -13,7 +13,7 @@ def main():
         print("No api key provided")
         return
     
-    project_path = Path.cwd() / "express-server"
+    project_path = Path.cwd() / "fastapi-server"
     
     print(f"Indexing codebase in: {project_path}.....")
     

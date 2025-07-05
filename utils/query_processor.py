@@ -1,3 +1,4 @@
+# query_processor.py
 import os
 from pathlib import Path
 from typing import List, Dict, Any
@@ -45,7 +46,14 @@ class QueryProcessor:
         return self.db.similarity_search(query_embedding, top_k=5)
     
     def _generate_changes(self, query: str, chunks: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-        context = self._build_context(chunks)
+        context = "\n".join([
+            f"File: {chunk['file_path']}\n"
+            f"Type: {chunk['chunk_type']}\n"
+            f"Name: {chunk['name']}\n"
+            f"Lines: {chunk['start_line']}-{chunk['end_line']}\n"
+            f"Content:\n{chunk['content']}\n---"
+            for chunk in chunks
+        ])
         
         prompt = f"""
             You are a code modification assistant. Based on the user's query and the relevant code context, 
@@ -80,43 +88,20 @@ class QueryProcessor:
             """
         
         try:
-            message = HumanMessage(content=prompt)
-            response = llm.invoke([message])
+            response = llm.invoke([HumanMessage(content=prompt)])
             
             # Extract JSON from response
-            content = response.content
-            json_match = re.search(r'\{.*\}', content, re.DOTALL)
+            json_match = re.search(r'\{.*\}', response.content, re.DOTALL)
             if json_match:
-                json_str = json_match.group()
-                changes_data = json.loads(json_str)
+                changes_data = json.loads(json_match.group())
                 return changes_data.get('changes', [])
-            else:
-                print("No valid JSON found in response")
-                return []
-        
-        except json.JSONDecodeError as e:
-            print(f"JSON parsing error: {e}")
-            print(f"Response content: {response.content}")
+            
+            print("No valid JSON found in response")
             return []
-        except Exception as e:
+        
+        except (json.JSONDecodeError, Exception) as e:
             print(f"Error generating changes: {e}")
             return []
-    
-    def _build_context(self, chunks: List[Dict[str, Any]]) -> str:
-        context_parts = []
-        
-        for chunk in chunks:
-            context_parts.append(f"""
-                File: {chunk['file_path']}
-                Type: {chunk['chunk_type']}
-                Name: {chunk['name']}
-                Lines: {chunk['start_line']}-{chunk['end_line']}
-                Content:
-                {chunk['content']}
-                ---
-                """)
-        
-        return '\n'.join(context_parts)
     
     def _apply_changes(self, changes: List[Dict[str, Any]]):
         if not changes:
@@ -160,7 +145,6 @@ class QueryProcessor:
     def _update_file_index(self, file_path: Path):
         """Update chunks for a specific file in the index"""
         try:
-            
             relative_path = file_path.relative_to(self.project_path)
             
             # Remove existing chunks for this file
