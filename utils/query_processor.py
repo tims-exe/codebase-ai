@@ -37,7 +37,15 @@ class QueryProcessor:
         
         changes = self._generate_changes(query, relevant_chunks)
         
-        self._apply_changes(changes)
+        if not changes:
+            print("No changes were generated for your query.")
+            return
+        
+        # Show proposed changes and ask for confirmation
+        if self._show_changes_and_confirm(changes):
+            self._apply_changes(changes)
+        else:
+            print("Changes cancelled by user.")
     
     def _find_relevant_chunks(self, query: str) -> List[Dict[str, Any]]:
         query_embedding = get_embedding(query)
@@ -110,65 +118,119 @@ class QueryProcessor:
             print(f"Error generating changes: {e}")
             return []
     
-    def _apply_changes(self, changes: List[Dict[str, Any]]):
-        if not changes:
-            print("No changes generated.")
-            return
+    def _show_changes_and_confirm(self, changes: List[Dict[str, Any]]) -> bool:
+        """Show proposed changes to user and ask for confirmation"""
+        print("\n" + "="*60)
+        print("PROPOSED CHANGES")
+        print("="*60)
         
-        for change in changes:
+        for i, change in enumerate(changes, 1):
+            print(f"\nChange {i}:")
+            print(f"File: {change['file_path']}")
+            print(f"Lines: {change['start_line']}-{change['end_line']}")
+            print(f"Reasoning: {change['reasoning']}")
+            
+            # Show current code
+            file_path = self.project_path / change['file_path']
+            if file_path.exists():
+                try:
+                    lines = file_path.read_text().splitlines()
+                    start_idx = change['start_line'] - 1
+                    end_idx = change['end_line'] - 1
+                    
+                    print(f"\nCurrent code:")
+                    print("-" * 40)
+                    for line_num in range(start_idx, min(end_idx + 1, len(lines))):
+                        print(f"{line_num + 1:3d}: {lines[line_num]}")
+                    print("-" * 40)
+                    
+                    print(f"\nNew code:")
+                    print("-" * 40)
+                    new_lines = change['new_content'].splitlines()
+                    for line_num, line in enumerate(new_lines, start=change['start_line']):
+                        print(f"{line_num:3d}: {line}")
+                    print("-" * 40)
+                    
+                except Exception as e:
+                    print(f"Error reading file: {e}")
+            else:
+                print(f"Warning: File {change['file_path']} not found!")
+        
+        print("\n" + "="*60)
+        
+        # Ask for confirmation
+        while True:
+            response = input("\nDo you want to apply these changes? (y/n): ").strip().lower()
+            
+            if response in ['y', 'yes']:
+                return True
+            elif response in ['n', 'no']:
+                return False
+            else:
+                print("Please enter 'y' for yes or 'n' for no.")
+    
+    def _apply_changes(self, changes: List[Dict[str, Any]]):
+        """Apply the confirmed changes"""
+        print("\nApplying changes...")
+        
+        for i, change in enumerate(changes, 1):
             try:
                 file_path = self.project_path / change['file_path']
                 
                 if not file_path.exists():
-                    print(f"File not found: {file_path}")
+                    print(f"Error: File not found: {file_path}")
                     continue
                 
-                print(f"Applying change to {file_path}")
-                print(f"Reasoning: {change['reasoning']}")
+                print(f"\nApplying change {i}/{len(changes)} to {file_path}")
                 
                 lines = file_path.read_text().splitlines()
                 
                 start_idx = change['start_line'] - 1
                 end_idx = change['end_line'] - 1
                 
-                # Show code before change
-                print(f"\nCode before change (lines {change['start_line']}-{change['end_line']}):")
-                print("=" * 50)
-                for i in range(start_idx, end_idx + 1):
-                    if i < len(lines):
-                        print(f"{i + 1:3d}: {lines[i]}")
-                print("=" * 50)
+                # Validate line numbers
+                if start_idx < 0 or end_idx >= len(lines) or start_idx > end_idx:
+                    print(f"Error: Invalid line numbers for {file_path}")
+                    continue
                 
                 new_lines = change['new_content'].splitlines()
-                
-                # Show code after change
-                print(f"\nCode after change:")
-                print("=" * 50)
-                for i, line in enumerate(new_lines, start=change['start_line']):
-                    print(f"{i:3d}: {line}")
-                print("=" * 50)
-                
                 modified_lines = lines[:start_idx] + new_lines + lines[end_idx + 1:]
                 
-                file_path.write_text('\n'.join(modified_lines))
+                # Create backup
+                backup_path = file_path.with_suffix(file_path.suffix + '.backup')
+                file_path.rename(backup_path)
                 
-                print(f"Successfully modified {file_path}")
-                
-                self._update_file_index(file_path)
-                
+                try:
+                    file_path.write_text('\n'.join(modified_lines))
+                    print(f"✓ Successfully modified {file_path}")
+                    
+                    # Update the index for this file
+                    self._update_file_index(file_path)
+                    
+                    # Remove backup if successful
+                    backup_path.unlink()
+                    
+                except Exception as e:
+                    # Restore backup if writing failed
+                    backup_path.rename(file_path)
+                    print(f"✗ Error writing to {file_path}: {e}")
+                    
             except Exception as e:
-                print(f"Error applying change to {change['file_path']}: {e}")
+                print(f"✗ Error applying change to {change['file_path']}: {e}")
+        
+        print("\n✓ All changes applied successfully!")
     
     def _update_file_index(self, file_path: Path):
+        """Update the search index for a modified file"""
         try:
             relative_path = file_path.relative_to(self.project_path)
             
+            # Remove old chunks for this file
             self.db.remove_chunks_for_file(str(relative_path))
             
+            # Re-index the file
             indexer = CodebaseIndexer(self.project_path)
             indexer._index_file(file_path)
             
-            print(f"Updated index for {file_path}")
-            
         except Exception as e:
-            print(f"Error updating index for {file_path}: {e}")
+            print(f"Warning: Could not update index for {file_path}: {e}")
