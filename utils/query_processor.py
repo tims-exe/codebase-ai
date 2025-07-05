@@ -82,7 +82,8 @@ class QueryProcessor:
             ]
             }}
 
-            Only suggest changes that directly address the user's query. Be precise with line numbers.
+            Only suggest changes that directly address the user's query. Be precise with line numbers and make sure not to cause any errors in the code 
+            Make sure you are importing only whats necessary and not repeating any imports in that file.
             """
         
         try:
@@ -121,7 +122,22 @@ class QueryProcessor:
                 start_idx = change['start_line'] - 1
                 end_idx = change['end_line'] - 1
                 
+                # Show code before change
+                print(f"\nCode before change (lines {change['start_line']}-{change['end_line']}):")
+                print("=" * 50)
+                for i in range(start_idx, end_idx + 1):
+                    if i < len(lines):
+                        print(f"{i + 1:3d}: {lines[i]}")
+                print("=" * 50)
+                
                 new_lines = change['new_content'].splitlines()
+                
+                # Show code after change
+                print(f"\nCode after change:")
+                print("=" * 50)
+                for i, line in enumerate(new_lines, start=change['start_line']):
+                    print(f"{i:3d}: {line}")
+                print("=" * 50)
                 
                 modified_lines = lines[:start_idx] + new_lines + lines[end_idx + 1:]
                 
