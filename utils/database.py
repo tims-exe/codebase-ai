@@ -1,5 +1,6 @@
+# database.py
 from pathlib import Path
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any
 import chromadb
 from chromadb.config import Settings
 
@@ -62,23 +63,7 @@ class EmbeddingDB:
             for i in range(len(results['ids'][0]))
         ]
     
-    def get_chunk_by_location(self, file_path: str, line_number: int) -> Optional[Dict[str, Any]]:
-        results = self.collection.get(where={"file_path": file_path})
-        
-        for i, metadata in enumerate(results['metadatas']):
-            if metadata['start_line'] <= line_number <= metadata['end_line']:
-                return {
-                    'file_path': metadata['file_path'],
-                    'chunk_type': metadata['chunk_type'],
-                    'name': metadata['name'],
-                    'start_line': metadata['start_line'],
-                    'end_line': metadata['end_line'],
-                    'content': results['documents'][i]
-                }
-        return None
-    
     def remove_chunks_for_file(self, file_path: str):
-        """Remove all chunks for a specific file"""
         try:
             results = self.collection.get(where={"file_path": file_path})
             if results['ids']:

@@ -3,12 +3,11 @@ import hashlib
 import logging
 from pathlib import Path
 from typing import List, Dict, Any
-from tree_sitter_language_pack import get_language, get_parser
+from tree_sitter_language_pack import get_parser
 from tree_sitter import Node
 from .database import EmbeddingDB
 from .embeddings import get_embedding
 
-# Setup logging
 logging.basicConfig(
     filename='manage.log',
     filemode='w',
@@ -42,7 +41,6 @@ class CodebaseIndexer:
         with open(file_path, 'rb') as f:
             source_code = f.read()
         
-        # Get parser and node types based on file extension
         if file_path.suffix == '.py':
             parser = get_parser('python')
             node_types = {
@@ -65,15 +63,12 @@ class CodebaseIndexer:
         tree = parser.parse(source_code)
         processed_lines = set()
         
-        # Process imports first
         imports = self._collect_nodes(tree.root_node, node_types['imports'])
         if imports:
             self._process_node_group(file_path, source_code, imports, 'Import', 'imports', processed_lines)
         
-        # Process other node types
         self._walk_tree(tree.root_node, file_path, source_code, node_types, processed_lines)
         
-        # Process remaining lines
         lines = source_code.decode('utf-8').split('\n')
         self._process_remaining_lines(file_path, lines, processed_lines)
     
@@ -155,7 +150,6 @@ class CodebaseIndexer:
         return ""
     
     def _process_remaining_lines(self, file_path: Path, lines: List[str], processed_lines: set):
-        """Process remaining lines as simple statement chunks"""
         chunk_lines = []
         start_line = None
         
@@ -168,7 +162,6 @@ class CodebaseIndexer:
                     start_line = i
                 chunk_lines.append(line)
                 
-                # End chunk on empty line or end of file
                 if not line.strip() or i == len(lines):
                     if chunk_lines and any(l.strip() for l in chunk_lines):
                         content = '\n'.join(chunk_lines).strip()
@@ -179,7 +172,6 @@ class CodebaseIndexer:
     
     def _store_chunk(self, file_path: Path, content: str, chunk_type: str, name: str, 
                     start_line: int, end_line: int):
-        """Store chunk if it doesn't already exist"""
         chunk_hash = hashlib.md5(content.encode()).hexdigest()
         
         if self.db.chunk_exists(chunk_hash):

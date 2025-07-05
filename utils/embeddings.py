@@ -1,5 +1,4 @@
 # embeddings.py
-import os
 from typing import List
 from langchain_huggingface import HuggingFaceEmbeddings
 
@@ -14,11 +13,3 @@ def get_embedding(text: str) -> List[float]:
     except Exception as e:
         print(f"Error generating embedding: {e}")
         return [0.0] * 384
-
-def get_embeddings_batch(texts: List[str]) -> List[List[float]]:
-    try:
-        embeddings = embeddings_model.embed_documents(texts)
-        return embeddings
-    except Exception as e:
-        print(f"Error generating batch embeddings: {e}")
-        return [[0.0] * 384 for _ in texts]

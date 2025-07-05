@@ -35,10 +35,8 @@ class QueryProcessor:
         
         print(f"Found {len(relevant_chunks)} relevant code chunks")
         
-        # Generate code changes using LLM
         changes = self._generate_changes(query, relevant_chunks)
         
-        # Apply changes to files
         self._apply_changes(changes)
     
     def _find_relevant_chunks(self, query: str) -> List[Dict[str, Any]]:
@@ -90,7 +88,6 @@ class QueryProcessor:
         try:
             response = llm.invoke([HumanMessage(content=prompt)])
             
-            # Extract JSON from response
             json_match = re.search(r'\{.*\}', response.content, re.DOTALL)
             if json_match:
                 changes_data = json.loads(json_match.group())
@@ -119,38 +116,30 @@ class QueryProcessor:
                 print(f"Applying change to {file_path}")
                 print(f"Reasoning: {change['reasoning']}")
                 
-                # Read current file content
                 lines = file_path.read_text().splitlines()
                 
-                # Replace the specified lines
                 start_idx = change['start_line'] - 1
                 end_idx = change['end_line'] - 1
                 
                 new_lines = change['new_content'].splitlines()
                 
-                # Replace the lines
                 modified_lines = lines[:start_idx] + new_lines + lines[end_idx + 1:]
                 
-                # Write back to file
                 file_path.write_text('\n'.join(modified_lines))
                 
                 print(f"Successfully modified {file_path}")
                 
-                # Update the index for this file
                 self._update_file_index(file_path)
                 
             except Exception as e:
                 print(f"Error applying change to {change['file_path']}: {e}")
     
     def _update_file_index(self, file_path: Path):
-        """Update chunks for a specific file in the index"""
         try:
             relative_path = file_path.relative_to(self.project_path)
             
-            # Remove existing chunks for this file
             self.db.remove_chunks_for_file(str(relative_path))
             
-            # Re-index the file
             indexer = CodebaseIndexer(self.project_path)
             indexer._index_file(file_path)
             
