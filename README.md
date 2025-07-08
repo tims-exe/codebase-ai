@@ -4,14 +4,11 @@ An intelligent code analysis and modification tool that uses Large Language Mode
 
 ## Features
 
-- **Interactive Project Selection**: Choose any project directory to analyze and modify
 - **Intelligent Code Analysis**: Automatically indexes and understands your codebase structure using AST parsing
 - **Natural Language Queries**: Ask questions about your code or request modifications in plain English
-- **Smart Re-indexing**: Detects if you've made recent changes and offers to re-index accordingly
 - **Change Preview & Confirmation**: Shows exactly what changes will be made before applying them
 - **Safe Modifications**: Creates backups before making changes and validates line numbers
 - **Semantic Search**: Find relevant code sections using vector embeddings
-- **Multi-language Support**: Currently supports Python and JavaScript files
 - **Minimal Changes**: Makes only necessary modifications while preserving existing functionality
 
 ## How It Works
