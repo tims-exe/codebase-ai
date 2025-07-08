@@ -20,16 +20,6 @@ An intelligent code analysis and modification tool that uses Large Language Mode
 5. **User Confirmation**: Shows you exactly what changes will be made before applying them
 6. **Safe Application**: Creates backups, applies changes, and updates the search index
 
-## Dependencies
-
-- `anthropic` - For Claude AI integration
-- `langchain-anthropic` - LangChain integration with Anthropic
-- `langchain-huggingface` - For local embeddings generation
-- `chromadb` - Vector database for code embeddings
-- `tree-sitter` - For parsing code syntax trees
-- `tree-sitter-language-pack` - Language parsers for Python and JavaScript
-- `python-dotenv` - For environment variable management
-
 ## Usage
 
 1. **Run the tool**:
